@@ -1,0 +1,71 @@
+{
+  "display_information": {
+    "name": "Pi Coding Agent",
+    "description": "Pi coding agent with one persistent session per Slack thread.",
+    "background_color": "#1f2937"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Pi",
+      "always_online": true
+    },
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "agent_view": {
+      "agent_description": "A persistent Pi coding agent. Each conversation thread is an independent session.",
+      "suggested_prompts": [
+        {
+          "title": "检查当前项目",
+          "message": "检查当前项目的状态和最近的测试结果"
+        },
+        {
+          "title": "开始一个编码任务",
+          "message": "帮我实现一个功能，并先给出计划"
+        },
+        {
+          "title": "查看当前配置",
+          "message": "显示当前模型和 thinking 配置"
+        }
+      ]
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "assistant:write",
+        "chat:write",
+        "channels:history",
+        "channels:read",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "im:write",
+        "reactions:read",
+        "reactions:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_home_opened",
+        "app_context_changed",
+        "app_mention",
+        "message.im",
+        "reaction_added"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

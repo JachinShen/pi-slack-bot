@@ -1,0 +1,54 @@
+{
+  "name": "pi-slack-bot",
+  "version": "0.1.3",
+  "description": "Slack bot exposing pi as a conversational coding agent. Chat with pi in Slack DMs with streaming responses, tool execution, threaded sessions, and model switching.",
+  "keywords": [
+    "pi-package",
+    "app"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samfoy/pi-slack-bot"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --import tsx/esm src/index.ts",
+    "smoke-test": "node --import tsx/esm scripts/pi-smoke-test.ts",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "check": "tsc --noEmit && eslint src/ && vitest --run",
+    "audit": "npm audit --omit=dev || true",
+    "coverage": "find src -name '*.test.ts' | xargs node --import tsx/esm --test --experimental-test-coverage",
+    "dead-code": "knip --exclude types",
+    "duplication": "npx -y jscpd --min-lines 10 --min-tokens 50 --threshold 5 src/"
+  },
+  "pi": {
+    "image": "https://raw.githubusercontent.com/samfoy/pi-slack-bot/main/assets/preview.jpg"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@sinclair/typebox": "^0.34.49",
+    "@slack/bolt": "^4.6.0",
+    "@slack/types": "^2.20.1",
+    "@slack/web-api": "^7.15.1",
+    "dotenv": "^16.4.7",
+    "slackify-markdown": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.3",
+    "knip": "^5.86.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.57.0",
+    "vitest": "^4.0.18"
+  }
+}
