@@ -233,7 +233,7 @@ export class ThreadSession {
       log.error("Model not found", { provider: params.config.provider, model: params.config.model, availableProviders: [...new Set(allModels.map(m => m.provider))] });
     }
 
-    const updater = new StreamingUpdater(params.client, params.config.streamThrottleMs);
+    const updater = new StreamingUpdater(params.client, params.config.streamThrottleMs, params.config.slackMsgLimit);
     const pasteProvider = createPasteProvider(params.config.pasteProvider);
 
     const ts = new ThreadSession(
