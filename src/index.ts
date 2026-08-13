@@ -31,8 +31,18 @@ const slackApp = createApp(config);
 
 await slackApp.app.start();
 log.info("Bot running");
-
-// Restore sessions from the on-disk registry (non-blocking — failures are logged)
+let shuttingDown = false;
+const postLifecycleMessage = async (text: string): Promise<void> => {
+  try {
+    const dm = await slackApp.app.client.conversations.open({ users: config.slackUserId });
+    const channelId = dm.channel?.id;
+    if (channelId) await slackApp.app.client.chat.postMessage({ channel: channelId, text });
+  } catch (err) {
+    log.error("Failed to post lifecycle message", { error: err });
+  }
+};
+await postLifecycleMessage("🟢 Slack Bot 已启动，正在恢复之前的会话。");
+// Restore sessions from the on-disk registry.
 slackApp.sessionManager.restoreAll().then((count) => {
   if (count > 0) log.info("Restored sessions from previous run", { count });
 }).catch((err) => {
@@ -45,9 +55,12 @@ process.on("unhandledRejection", (reason) => {
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     log.info(`Shutting down (${sig})`);
+    await postLifecycleMessage(`🟡 Slack Bot 正在关闭（${sig}），活动会话将在重启后恢复。`);
     slackApp.sessionManager.stopReaper();
-    await slackApp.sessionManager.disposeAll();
+    await slackApp.sessionManager.disposeAll({ preserveRegistry: true });
     await slackApp.sessionManager.flushRegistry();
     slackApp.sessionManager.disposeRegistry();
     await slackApp.app.stop();

@@ -1,5 +1,5 @@
 import type { WebClient } from "@slack/web-api";
-import { markdownToMrkdwn, splitMrkdwn, formatToolStart, formatToolLog, formatToolCompleted, formatToolSummaryLine, type ToolCallRecord } from "./formatter.js";
+import { markdownToMrkdwn, splitMrkdwn, formatToolStart, formatToolLog, formatToolCompleted, type ToolCallRecord } from "./formatter.js";
 import { retrySlackCall } from "./slack-retry.js";
 import { createLogger } from "./logger.js";
 
@@ -126,13 +126,23 @@ export class StreamingUpdater {
   async finalize(state: StreamingState): Promise<void> {
     this._cancelTimer(state);
     this._cancelCoalesceTimer(state);
-    // Replace the same streaming message with the final assistant response
-    // after the last tool status has been rendered.
-    await this._doFlush(state, false);
 
-    // Upload tool activity log as a collapsible snippet
     if (state.toolRecords.length > 0) {
+      // The original message predates the tool attachment. Turn it into a
+      // small activity marker, upload the expandable details, then post the
+      // answer as a new reply so the answer is always last.
+      const answer = state.rawMarkdown;
+      state.rawMarkdown = "🔧 Tool activity (see details below)";
+      await this._doFlush(state, false);
       await this._uploadToolLog(state);
+      // Let Slack finish processing the upload before creating the final reply
+      // so the attachment cannot appear after it in the thread.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await this._postStandalone(state, answer);
+    } else {
+      // With no tool log there is no later Slack message, so an in-place final
+      // update is sufficient and avoids an unnecessary duplicate message.
+      await this._doFlush(state, false);
     }
 
     await retrySlackCall(
@@ -247,19 +257,17 @@ export class StreamingUpdater {
     }
   }
 
-  /**
-   * Upload tool activity log as a collapsible Slack file snippet.
-   */
-  private async _uploadToolLog(state: StreamingState): Promise<void> {
-    const logContent = formatToolLog(state.toolRecords);
-    if (!logContent) return;
 
+  /** Upload detailed tool calls as an expandable Slack file snippet. */
+  private async _uploadToolLog(state: StreamingState): Promise<void> {
+    const content = formatToolLog(state.toolRecords);
+    if (!content) return;
     try {
       await retrySlackCall(
         () => this._client.files.uploadV2({
           channel_id: state.channelId,
           thread_ts: state.threadTs,
-          content: logContent,
+          content,
           filename: "tool-activity.txt",
           title: `🔧 ${state.toolRecords.length} tool calls`,
         }),
@@ -267,7 +275,21 @@ export class StreamingUpdater {
       );
     } catch (err) {
       log.error("Failed to upload tool log", { error: err });
-      // Non-fatal: the response text is already posted
+    }
+  }
+
+  private async _postStandalone(state: StreamingState, markdown: string, limit = this._msgLimit): Promise<void> {
+    const mrkdwn = markdownToMrkdwn(markdown.trim(), false);
+    const chunks = splitMrkdwn(mrkdwn, limit);
+    for (const text of chunks) {
+      await retrySlackCall(
+        () => this._client.chat.postMessage({
+          channel: state.channelId,
+          thread_ts: state.threadTs,
+          text,
+        }),
+        "chat.postMessage (final answer)",
+      );
     }
   }
 
@@ -294,14 +316,12 @@ export class StreamingUpdater {
       }
       toolBlock = parts.join("\n");
     } else {
-      // Final flush: one-line summary inline (detailed log goes in the file)
-      if (state.toolRecords.length > 0) {
-        toolBlock = formatToolSummaryLine(state.toolRecords);
-      }
+      // Tool details are posted separately as an expandable file; never add
+      // a duplicate inline summary to the final assistant message.
+      toolBlock = "";
     }
 
-    // On the final edit, keep the compact tool summary before the conclusion
-    // so the message reads in execution order: tools → answer.
+    // The final assistant message contains only the answer.
     const combined = toolBlock
       ? (partial ? `${body}\n\n${toolBlock}` : `${toolBlock}\n\n${body}`)
       : body;

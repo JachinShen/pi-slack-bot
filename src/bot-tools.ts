@@ -39,9 +39,10 @@ export function createRestartBotTool(
     async execute() {
       const ctx = getContext();
       log.info("restart_bot tool called — graceful shutdown and restart");
-      // Mirror the SIGINT handler's graceful shutdown sequence
+      // Persist active sessions so launchd can restore them after exit.
+      await ctx.sessionManager.postLifecycleMessage("🟡 Slack Bot 正在重启，活动会话将在重启后恢复。");
       ctx.sessionManager.stopReaper();
-      await ctx.sessionManager.disposeAll();
+      await ctx.sessionManager.disposeAll({ preserveRegistry: true });
       await ctx.sessionManager.flushRegistry();
       ctx.sessionManager.disposeRegistry();
       // Exit with code 75 after a short delay so the tool response gets sent first.

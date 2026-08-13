@@ -53,6 +53,7 @@ const handlers: Record<string, CommandHandler> = {
       "`!help` — Show this list",
       "`!new` — Start a new session",
       "`!cancel` — Cancel the current stream",
+      "`!done` — Mark this session complete and exclude it from future restores",
       "`!status` — Show session info",
       "`!model <name>` — Switch model",
       "`!thinking <level>` — Set thinking level (off, minimal, low, medium, high, xhigh)",
@@ -87,6 +88,15 @@ const handlers: Record<string, CommandHandler> = {
     }
     await ctx.session.newSession();
     await reply(ctx, "🆕 New session started.");
+  },
+
+  async done(ctx) {
+    if (!ctx.session) {
+      await reply(ctx, "No active session.");
+      return;
+    }
+    await ctx.sessionManager.dispose(ctx.threadTs);
+    await reply(ctx, "✅ Session marked complete. It will not be restored after restart.");
   },
 
   async cancel(ctx) {

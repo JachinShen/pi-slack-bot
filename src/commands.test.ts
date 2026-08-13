@@ -118,6 +118,12 @@ function makeSession(overrides: Record<string, any> = {}) {
     prompt: vi.fn(async () => {}),
     getContextUsage: vi.fn(() => undefined),
     compact: vi.fn(async () => ({ summary: "compacted", firstKeptEntryId: "1", tokensBefore: 180000 })),
+    modelRuntime: {
+      getAvailableSnapshot: () => [
+        { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic", reasoning: false, contextWindow: 200000 },
+        { id: "gpt-4o", name: "GPT-4o", provider: "openai", reasoning: false, contextWindow: 128000 },
+      ],
+    },
     modelRegistry: {
       getAvailable: () => [
         { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic", reasoning: false, contextWindow: 200000 },

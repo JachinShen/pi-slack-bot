@@ -20,6 +20,7 @@ import { formatTokenCount, formatContextUsage, getContextWarningThreshold } from
 import { createLogger } from "./logger.js";
 import type { ToolCallRecord } from "./formatter.js";
 import { isExpiredTokenError, refreshAwsCredentials } from "./aws-creds.js";
+import { createSlackApprovalExtension } from "./approval-policy.js";
 
 const log = createLogger("thread-session");
 
@@ -104,6 +105,8 @@ export class ThreadSession {
    * Used by prompt() to wait for the full turn (including extension-triggered follow-ups).
    */
   private _turnCompletePromise: Promise<void> | null = null;
+  /** True while Pi is executing a turn; survives shutdown until registry capture. */
+  private _turnActive = false;
   private _turnCompleteResolve: (() => void) | null = null;
   /**
    * Tracks the highest context warning threshold we've already warned about.
@@ -149,6 +152,7 @@ export class ThreadSession {
       // Pi 0.80+ requires the global agent directory explicitly when the
       // resource loader is used outside the normal CLI entrypoint.
       agentDir: process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent"),
+      extensionFactories: [createSlackApprovalExtension({ channelId: params.channelId, threadTs: params.threadTs })],
     });
     await resourceLoader.reload();
 
@@ -296,6 +300,7 @@ export class ThreadSession {
 
     this._persistentUnsub = this._agentSession.subscribe((event) => {
       if (event.type === "agent_start") {
+        this._turnActive = true;
         stateReady = false;
         pendingEvents = [];
         this._turnToolRecords = [];
@@ -316,6 +321,7 @@ export class ThreadSession {
       }
 
       if (event.type === "agent_end") {
+        this._turnActive = false;
         // Agent turn finished — finalize the stream and resolve the turn promise.
         // If begin() hasn't resolved yet (fast API error), await it first.
         const doFinalize = async () => {
@@ -467,6 +473,10 @@ export class ThreadSession {
     } else if (event.type === "tool_execution_end") {
       this._updater.appendToolEnd(state, event.toolName, event.isError);
     }
+  }
+
+  async resumeInterruptedTurn(): Promise<void> {
+    await this.prompt("Continue the interrupted task from where you left off. Do not repeat work that was already completed; inspect the current state and finish the task.");
   }
 
   async prompt(text: string, options?: { images?: ImageContent[] }): Promise<void> {
@@ -624,6 +634,10 @@ export class ThreadSession {
 
   get isStreaming(): boolean {
     return this._agentSession.isStreaming;
+  }
+
+  get hasActiveTurn(): boolean {
+    return this._turnActive;
   }
 
   get messageCount(): number {

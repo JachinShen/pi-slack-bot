@@ -13,6 +13,7 @@ describe("restart_bot", () => {
     mockSessionManager = {
       stopReaper: vi.fn(),
       disposeAll: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      postLifecycleMessage: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
       flushRegistry: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
       disposeRegistry: vi.fn(),
     };
@@ -22,7 +23,7 @@ describe("restart_bot", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
     const tool = createRestartBotTool(() => ({ sessionManager: mockSessionManager as BotSessionManager }));
 
-    await tool.execute({});
+    await tool.execute("restart-1", {}, undefined, undefined, {} as any);
 
     assert.equal((mockSessionManager.stopReaper as ReturnType<typeof vi.fn>).mock.calls.length, 1);
     assert.equal((mockSessionManager.disposeAll as ReturnType<typeof vi.fn>).mock.calls.length, 1);
@@ -36,9 +37,9 @@ describe("restart_bot", () => {
     vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
     const tool = createRestartBotTool(() => ({ sessionManager: mockSessionManager as BotSessionManager }));
 
-    const result = await tool.execute({});
+    const result = await tool.execute("restart-2", {}, undefined, undefined, {} as any);
     assert.ok(Array.isArray(result.content));
-    assert.ok(result.content[0].text.includes("Restarting"));
+    assert.ok((result.content[0] as { text: string }).text.includes("Restarting"));
 
     vi.restoreAllMocks();
   });
@@ -57,15 +58,15 @@ describe("set_model", () => {
 
   it("delegates to session.setModel", async () => {
     const tool = createSetModelTool(() => mockSession as ThreadSession);
-    await tool.execute("call-1", { model: "anthropic/claude-sonnet-4-5" });
+    await tool.execute("call-1", { model: "anthropic/claude-sonnet-4-5" }, undefined, undefined, {} as any);
     assert.equal((mockSession.setModel as ReturnType<typeof vi.fn>).mock.calls[0][0], "anthropic/claude-sonnet-4-5");
   });
 
   it("returns error on invalid model", async () => {
     mockSession.setModel = vi.fn<(name: string) => Promise<void>>().mockRejectedValue(new Error("Model not found: bad-model"));
     const tool = createSetModelTool(() => mockSession as ThreadSession);
-    const result = await tool.execute("call-2", { model: "bad-model" });
-    assert.ok(result.content[0].text.includes("Model not found"));
+    const result = await tool.execute("call-2", { model: "bad-model" }, undefined, undefined, {} as any);
+    assert.ok((result.content[0] as { text: string }).text.includes("Model not found"));
   });
 });
 
@@ -83,20 +84,20 @@ describe("set_thinking_level", () => {
   it("accepts valid levels", async () => {
     const tool = createSetThinkingLevelTool(() => mockSession as ThreadSession);
     for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
-      await tool.execute("call-1", { level });
+      await tool.execute("call-1", { level }, undefined, undefined, {} as any);
     }
     assert.equal((mockSession.setThinkingLevel as ReturnType<typeof vi.fn>).mock.calls.length, 6);
   });
 
   it("normalizes case", async () => {
     const tool = createSetThinkingLevelTool(() => mockSession as ThreadSession);
-    await tool.execute("call-2", { level: "HIGH" });
+    await tool.execute("call-2", { level: "HIGH" }, undefined, undefined, {} as any);
     assert.equal((mockSession.setThinkingLevel as ReturnType<typeof vi.fn>).mock.calls[0][0], "high");
   });
 
   it("rejects invalid levels", async () => {
     const tool = createSetThinkingLevelTool(() => mockSession as ThreadSession);
-    const result = await tool.execute("call-3", { level: "turbo" });
-    assert.ok(result.content[0].text.includes("Invalid"));
+    const result = await tool.execute("call-3", { level: "turbo" }, undefined, undefined, {} as any);
+    assert.ok((result.content[0] as { text: string }).text.includes("Invalid"));
   });
 });

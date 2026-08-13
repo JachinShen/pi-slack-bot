@@ -37,6 +37,7 @@ type SessionFactory = (params: ThreadSessionCreateParams) => Promise<ThreadSessi
 
 export class BotSessionManager {
   private _sessions = new Map<string, ThreadSession>();
+  private _titledThreads = new Set<string>();
   private _reaper: ReturnType<typeof setInterval>;
   private _registry: SessionRegistry;
 
@@ -87,8 +88,12 @@ export class BotSessionManager {
     }
   }
 
-  async disposeAll(): Promise<void> {
-    await Promise.all([...this._sessions.keys()].map((ts) => this.dispose(ts)));
+  async disposeAll(options?: { preserveRegistry?: boolean }): Promise<void> {
+    const entries = options?.preserveRegistry ? this._currentEntries(true) : null;
+    await Promise.all([...this._sessions.values()].map((session) => session.dispose()));
+    this._sessions.clear();
+    if (entries) this._registry.scheduleSave(entries);
+    else this._persistRegistry();
   }
 
   /**
@@ -157,6 +162,22 @@ export class BotSessionManager {
   async flushRegistry(): Promise<void> {
     await this._registry.flush();
   }
+  hasGeneratedTitle(threadTs: string): boolean {
+    return this._titledThreads.has(threadTs);
+  }
+  markGeneratedTitle(threadTs: string): void {
+    this._titledThreads.add(threadTs);
+    this._persistRegistry();
+  }
+
+  async postLifecycleMessage(text: string): Promise<void> {
+    try {
+      const dm = await this._client.conversations.open({ users: this._config.slackUserId });
+      if (dm.channel?.id) await this._client.chat.postMessage({ channel: dm.channel.id, text });
+    } catch (err) {
+      log.error("Failed to post lifecycle message", { error: err });
+    }
+  }
 
   private async _restoreOne(entry: SessionEntry): Promise<boolean> {
     // Skip if a session for this thread was already created (e.g., by an incoming message)
@@ -166,18 +187,24 @@ export class BotSessionManager {
     }
 
     try {
+      if (entry.titleSet) this._titledThreads.add(entry.threadTs);
       await this.getOrCreate({
         threadTs: entry.threadTs,
         channelId: entry.channelId,
         cwd: entry.cwd,
         resumeSessionPath: entry.sessionPath,
       });
-
       await this._client.chat.postMessage({
         channel: entry.channelId,
         thread_ts: entry.threadTs,
-        text: "🔄 Session restored after restart.",
+        text: entry.resumeOnStartup
+          ? "🔄 Bot restarted after an interrupted run. Resuming the task..."
+          : "🔄 Session restored after restart.",
       });
+      if (entry.resumeOnStartup) {
+        const session = this._sessions.get(entry.threadTs);
+        session?.enqueue(() => session.resumeInterruptedTurn());
+      }
 
       return true;
     } catch (err) {
@@ -190,13 +217,17 @@ export class BotSessionManager {
    * Build the current entries list from in-memory sessions and schedule a debounced save.
    */
   private _persistRegistry(): void {
-    const entries: SessionEntry[] = [...this._sessions.values()].map((s) => ({
+    this._registry.scheduleSave(this._currentEntries(false));
+  }
+  private _currentEntries(resumeOnStartup: boolean): SessionEntry[] {
+    return [...this._sessions.values()].map((s) => ({
       threadTs: s.threadTs,
       channelId: s.channelId,
       cwd: s.cwd,
       sessionPath: s.sessionPath,
+      ...(resumeOnStartup && s.hasActiveTurn ? { resumeOnStartup: true } : {}),
+      ...(this._titledThreads.has(s.threadTs) ? { titleSet: true } : {}),
     }));
-    this._registry.scheduleSave(entries);
   }
 
   private async _reap(): Promise<void> {

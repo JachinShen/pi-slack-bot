@@ -52,6 +52,7 @@ function makeMockSession(models: any[], currentModel?: any) {
   return {
     cwd: "/tmp",
     model: currentModel ?? models[0] ?? null,
+    modelRuntime: { getAvailableSnapshot: () => models },
     modelRegistry: {
       getAvailable: () => models,
       getAll: () => models,

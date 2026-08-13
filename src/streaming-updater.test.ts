@@ -203,7 +203,7 @@ describe("StreamingUpdater", () => {
     assert.equal(state.toolRecords[0].isError, false);
   });
 
-  it("finalize uploads tool log as file snippet when tools were used", async () => {
+  it("finalize keeps the Slack thread concise when tools were used", async () => {
     const client = makeClient();
     const updater = new StreamingUpdater(client, 3000);
     const state = await updater.begin("C1", "ts1");
@@ -218,15 +218,12 @@ describe("StreamingUpdater", () => {
 
     await updater.finalize(state);
 
-    // Should upload a file snippet
+    // The expandable detailed log is posted before the final answer.
     assert.equal(client.files.uploadV2.mock.calls.length, 1);
-    const uploadCall = client.files.uploadV2.mock.calls[0][0];
-    assert.equal(uploadCall.channel_id, "C1");
-    assert.equal(uploadCall.thread_ts, "ts1");
-    assert.equal(uploadCall.filename, "tool-activity.txt");
-    assert.ok(uploadCall.title.includes("1 tool call"));
-    assert.ok(uploadCall.content.includes("Read"), "should include tool description");
-    assert.ok(uploadCall.content.includes("a.ts"), "should include file name");
+    assert.equal(client.files.uploadV2.mock.calls[0][0].filename, "tool-activity.txt");
+    assert.ok(client.files.uploadV2.mock.calls[0][0].content.includes("Read"));
+    const finalPost = client.chat.postMessage.mock.calls.at(-1)![0];
+    assert.equal(finalPost.text.trim(), "Done");
   });
 
   it("finalize does not upload snippet when no tools were used", async () => {
@@ -240,11 +237,10 @@ describe("StreamingUpdater", () => {
     assert.equal(client.files.uploadV2.mock.calls.length, 0);
   });
 
-  it("finalize includes tool summary in final message text", async () => {
+  it("finalize keeps tool details separate from the final answer", async () => {
     const client = makeClient();
     const updater = new StreamingUpdater(client, 3000);
     const state = await updater.begin("C1", "ts1");
-
     updater.appendText(state, "Result text");
     updater.appendToolStart(state, "bash", { command: "ls" });
     flushTimers();
@@ -252,16 +248,13 @@ describe("StreamingUpdater", () => {
     updater.appendToolEnd(state, "bash", false);
     flushTimers();
     await new Promise((r) => realSetTimeout(r, 10));
-
     await updater.finalize(state);
-
-    // Get the final chat.update call (last one)
-    const updateCalls = client.chat.update.mock.calls;
-    const finalUpdate = updateCalls[updateCalls.length - 1][0];
-    assert.ok(!finalUpdate.text.includes("🔧"), "final message should not have tool wrench");
-    assert.ok(finalUpdate.text.includes("Result text"), "final message should have response text");
-    assert.ok(finalUpdate.text.includes("📋"), "final message should have tool summary line");
-    assert.ok(finalUpdate.text.includes("1 tool call"), "summary should mention tool count");
+    const finalMarker = client.chat.update.mock.calls.at(-1)![0];
+    assert.ok(finalMarker.text.includes("Tool activity"));
+    const finalPost = client.chat.postMessage.mock.calls.at(-1)![0];
+    assert.equal(finalPost.text.trim(), "Result text");
+    assert.equal(client.files.uploadV2.mock.calls.length, 1);
+    assert.ok(client.files.uploadV2.mock.calls[0][0].content.includes("Ran"));
   });
 
   it("snippet upload failure does not break finalize", async () => {

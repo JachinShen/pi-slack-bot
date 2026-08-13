@@ -17,6 +17,10 @@ export interface SessionEntry {
   channelId: string;
   cwd: string;
   sessionPath: string;
+  /** True when the process stopped while this session was actively streaming. */
+  resumeOnStartup?: boolean;
+  /** True after the AI-generated Slack title has been applied. */
+  titleSet?: boolean;
 }
 
 interface RegistryFile {

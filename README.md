@@ -12,6 +12,7 @@ A Slack bot that exposes [pi](https://github.com/earendil-works/pi) as a convers
 - **Prompt templates** — run file-based prompt templates via `!prompt` with a picker UI
 - **Attach server** — external processes can connect via WebSocket and stream to Slack threads
 - **Session management** — configurable limits, idle timeout, automatic cleanup
+- **AI tool approval** — pi-menshen reviews risky tool calls with `openai-codex/gpt-5.3-codex-spark`; uncertain calls pause and appear as Slack approval buttons
 
 ## Prerequisites
 
@@ -54,6 +55,16 @@ cp .env.example .env
 | `DEFAULT_CWD` | | `~` | Working directory for every new session |
 | `WORKSPACE_DIRS` | | `~/projects` | Legacy project discovery directories |
 | `ATTACH_PORT` | | `3001` | WebSocket port for the attach server |
+
+### AI approval configuration
+
+Install the permission extension once:
+
+```bash
+pi install npm:@shinynito/pi-menshen
+```
+
+The bot uses `~/.pi/pi-menshen.json` with the dedicated reviewer model `openai-codex/gpt-5.3-codex-spark`. AI-safe calls are auto-approved. Calls requiring human review are sent to the operator's Slack DM with allow, deny, and deny-and-remember buttons. Expired, failed, or unauthorized approvals fail closed.
 
 ### Project Discovery
 
@@ -181,7 +192,7 @@ npm run duplication
 src/
 ├── index.ts              # Entry point — boots Slack app + attach server
 ├── config.ts             # Environment variable parsing
-├── slack.ts              # Slack Bolt app, event routing, project picker
+├── slack.ts              # Slack Bolt app, event routing, project picker, approval actions
 ├── session-manager.ts    # Session lifecycle, limits, idle reaping
 ├── thread-session.ts     # Per-thread pi AgentSession wrapper
 ├── streaming-updater.ts  # Streams agent output to Slack with throttling
@@ -190,6 +201,7 @@ src/
 ├── commands.ts           # !command dispatch
 ├── command-picker.ts     # Prompt template button picker
 ├── file-picker.ts        # Interactive file browser via Slack buttons
+├── approval-relay.ts      # pi-menshen headless relay → Slack Block Kit approval
 └── attach-server.ts      # WebSocket server for external session attachment
 ```
 

@@ -47,7 +47,13 @@ RESTART_DELAY=2  # seconds between restart cycles
 while true; do
   echo "[run.sh] Starting pi-slack-bot..."
   set +e
-  node --import tsx/esm src/index.ts
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+  if [ -z "$NODE_BIN" ] && [ -x "$HOME/.local/bin/node" ]; then NODE_BIN="$HOME/.local/bin/node"; fi
+  if [ -z "$NODE_BIN" ]; then
+    echo "[run.sh] ERROR: node not found" >&2
+    exit 127
+  fi
+  "$NODE_BIN" --import tsx/esm src/index.ts
   exit_code=$?
   set -e
 

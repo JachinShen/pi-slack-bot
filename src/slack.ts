@@ -18,6 +18,7 @@ import {
 import { handleReaction, REACTION_MAP } from "./reactions.js";
 import { PinStore } from "./pin-store.js";
 import { createLogger } from "./logger.js";
+import { SlackApprovalRelay } from "./approval-relay.js";
 
 const log = createLogger("slack");
 export interface SlackApp {
@@ -34,34 +35,31 @@ export function createApp(config: Config): SlackApp {
 
   const sessionManager = new BotSessionManager(config, app.client);
   const pinStore = new PinStore(config.sessionDir);
+  const approvalRelay = new SlackApprovalRelay(app.client, config.slackUserId);
+  approvalRelay.start();
 
   function cleanMention(text: string): string {
     return text.replace(/<@[^>]+>/g, "").replace(/\s+/g, " ").trim();
   }
 
-  function titleFromPrompt(text: string): string {
-    const clean = cleanMention(text).replace(/^!\w+\s*/, "").trim();
-    if (!clean) return "Pi task";
-    return clean.length > 80 ? `${clean.slice(0, 77)}...` : clean;
+
+  async function setThreadTitle(channel: string, threadTs: string, title: string, client: typeof app.client): Promise<boolean> {
+    try {
+      await client.assistant.threads.setTitle({ channel_id: channel, thread_ts: threadTs, title });
+      log.info("Slack thread title set", { channel, threadTs, title });
+      return true;
+    } catch (err) {
+      log.warn("Could not set Slack thread title", { channel, threadTs, error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
   }
 
-  async function setThreadTitle(channel: string, threadTs: string, title: string, client: typeof app.client): Promise<void> {
-    try {
-      await client.assistant.threads.setTitle({
-        channel_id: channel,
-        thread_ts: threadTs,
-        title,
-      });
-      log.info("Slack thread title set", { channel, threadTs, title });
-    } catch (err) {
-      // Standard Slack threads do not expose a title field. This succeeds for
-      // Slack Assistant threads when assistant:write is granted, and is a
-      // harmless best-effort call otherwise.
-      log.warn("Could not set Slack thread title", {
-        channel,
-        threadTs,
-        error: err instanceof Error ? err.message : String(err),
-      });
+  async function setGeneratedTitle(threadTs: string, channel: string, session: { sessionName?: string }, client: typeof app.client): Promise<void> {
+    if (sessionManager.hasGeneratedTitle(threadTs)) return;
+    const generated = session.sessionName;
+    if (!generated) return;
+    if (await setThreadTitle(channel, threadTs, generated, client)) {
+      sessionManager.markGeneratedTitle(threadTs);
     }
   }
 
@@ -78,17 +76,15 @@ export function createApp(config: Config): SlackApp {
         channelId: event.channel,
         cwd: config.defaultCwd,
       });
-      // Slack's assistant title API is best effort; replies still work when
-      // the workspace treats this as an ordinary channel thread.
-      if (!existing) await setThreadTitle(event.channel, threadTs, titleFromPrompt(text), client);
+      // Do not use user text as a title. The title is set only from Pi's
+      // AI-generated session name after a completed turn.
       if (existing) {
         void session.submit(text).catch((err) => {
           log.error("Failed to submit steered channel message", { threadTs, error: err });
         });
       } else {
         session.enqueue(() => session.prompt(text).then(async () => {
-          const generated = session.sessionName;
-          if (generated) await setThreadTitle(event.channel, threadTs, generated, client);
+          await setGeneratedTitle(threadTs, event.channel, session, client);
         }));
       }
     } catch (err) {
@@ -161,7 +157,7 @@ export function createApp(config: Config): SlackApp {
         session,
         pinStore,
         modelAllowlist: config.modelAllowlist,
-        setThreadTitle: async (title) => setThreadTitle(channel, threadTs, title, client),
+        setThreadTitle: async (title) => { await setThreadTitle(channel, threadTs, title, client); },
       });
       return;
     }
@@ -194,14 +190,12 @@ export function createApp(config: Config): SlackApp {
         session.cwd,
         config.slackBotToken,
       );
-      // Assistant threads support a real title. For ordinary DM threads this
-      // is best-effort; the root prompt remains the visible fallback title.
-      await setThreadTitle(channel, threadTs, titleFromPrompt(prompt), client);
+      // Set the title only after Pi generates a session name; never use the
+      // user's prompt as a fallback title.
       session.enqueue(async () => {
         await session.prompt(prompt, { images });
         // pi-topic-title generates a name after the first completed turn.
-        const generated = session.sessionName;
-        if (generated) await setThreadTitle(channel, threadTs, generated, client);
+        await setGeneratedTitle(threadTs, channel, session, client);
       });
     } catch (err) {
       if (err instanceof SessionLimitError) {
@@ -285,7 +279,7 @@ export function createApp(config: Config): SlackApp {
   /** Register a Slack button action handler with standard boilerplate. */
   function onButtonAction(
     actionId: string | RegExp,
-    handler: (messageTs: string, value: string) => Promise<void>,
+    handler: (messageTs: string, value: string, actionId: string, actorId: string) => Promise<void>,
     opts?: { noValue?: boolean },
   ): void {
     app.action(actionId, async ({ action, body, ack }) => {
@@ -295,7 +289,9 @@ export function createApp(config: Config): SlackApp {
       const messageTs = body.message?.ts;
       if (!messageTs) return;
       const value = action.type === "button" && "value" in action ? action.value! : "";
-      await handler(messageTs, value);
+      const actionId = "action_id" in action && typeof action.action_id === "string" ? action.action_id : "";
+      const actorId = body.user?.id ?? "";
+      await handler(messageTs, value, actionId, actorId);
     });
   }
 
@@ -315,6 +311,11 @@ export function createApp(config: Config): SlackApp {
   /* ── Session resume picker ──────────────────────────────────────── */
   onButtonAction(/^resume_project_/, handleResumeProjectSelect);
   onButtonAction(/^resume_session_/, handleResumeSessionSelect);
+
+  /* ── Headless tool approval relay ─────────────────────────────────── */
+  onButtonAction(/^slack_approval_/, async (_messageTs, requestId, actionId, actorId) => {
+    await approvalRelay.handleAction(actionId, requestId, actorId);
+  });
 
   app.error(async (error) => {
     log.error("Bolt app error", { error });
