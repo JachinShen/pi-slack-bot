@@ -200,6 +200,13 @@ export class ThreadSession {
     const uiContext = createNoopUiContext({
       notify: (message: string, type?: "info" | "warning" | "error") => {
         log.info("Extension notification", { type: type ?? "info", message, threadTs: params.threadTs });
+        void params.client.chat.postMessage({
+          channel: params.channelId,
+          thread_ts: params.threadTs,
+          text: `ℹ️ ${message}`,
+        }).catch((err) => {
+          log.warn("Failed to post extension notification", { threadTs: params.threadTs, error: err });
+        });
       },
     });
     await session.bindExtensions({
@@ -343,7 +350,7 @@ export class ThreadSession {
           const messages = "messages" in event ? event.messages : [];
           const lastMsg = messages[messages.length - 1];
           const apiError = lastMsg && "stopReason" in lastMsg && lastMsg.stopReason === "error"
-            ? ("errorMessage" in lastMsg ? (lastMsg.errorMessage as string) : "Unknown API error")
+            ? ("errorMessage" in lastMsg ? lastMsg.errorMessage! : "Unknown API error")
             : null;
 
           if (state) {

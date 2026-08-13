@@ -298,28 +298,19 @@ export class StreamingUpdater {
 
     // Build tool status block: during streaming show recent completed + active tools;
     // on finalize (partial=false), show a one-line summary.
-    let toolBlock = "";
-    if (partial) {
+    const toolBlock = partial ? (() => {
       const parts: string[] = [];
-
-      // Show last 5 completed tools with descriptions
       const maxVisible = 5;
       const completed = state.completedToolLines;
       if (completed.length > maxVisible) {
         parts.push(`> _…${completed.length - maxVisible} earlier tools_`);
       }
       parts.push(...completed.slice(-maxVisible));
-
-      // Show active (in-progress) tools
       if (state.toolLines.length > 0) {
         parts.push(...state.toolLines);
       }
-      toolBlock = parts.join("\n");
-    } else {
-      // Tool details are posted separately as an expandable file; never add
-      // a duplicate inline summary to the final assistant message.
-      toolBlock = "";
-    }
+      return parts.join("\n");
+    })() : "";
 
     // The final assistant message contains only the answer.
     const combined = toolBlock

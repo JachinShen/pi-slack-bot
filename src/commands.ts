@@ -310,7 +310,7 @@ const handlers: Record<string, CommandHandler> = {
       });
       const messages = result.messages ?? [];
       const botMsg = [...messages].reverse().find((m) => m.user === botUserId);
-      if (!botMsg || !botMsg.ts) {
+      if (!botMsg?.ts) {
         await reply(ctx, "No bot message found to pin.");
         return;
       }

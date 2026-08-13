@@ -24,6 +24,12 @@ export interface Pin {
   threadTs: string;
 }
 
+function isPin(value: unknown): value is Pin {
+  if (!value || typeof value !== "object") return false;
+  const pin = value as Record<string, unknown>;
+  return ["timestamp", "preview", "permalink", "channelId", "threadTs"].every((key) => typeof pin[key] === "string");
+}
+
 export class PinStore {
   private _pins: Pin[];
   private _filePath: string;
@@ -66,9 +72,9 @@ export class PinStore {
   private static _load(filePath: string): Pin[] {
     try {
       const raw = readFileSync(filePath, "utf-8");
-      const data = JSON.parse(raw);
-      if (Array.isArray(data)) return data;
-      return [];
+      const data: unknown = JSON.parse(raw);
+      if (!Array.isArray(data)) return [];
+      return data.filter((item): item is Pin => isPin(item));
     } catch {
       return [];
     }

@@ -65,12 +65,14 @@ export async function refreshAwsCredentials(): Promise<boolean> {
 }
 
 async function parseCredentialProcess(profile: string): Promise<{ account?: string; role?: string }> {
-  const { readFile } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const { homedir } = await import("node:os");
+  const [{ readFile }, path, { homedir }] = await Promise.all([
+    import("node:fs/promises"),
+    import("node:path"),
+    import("node:os"),
+  ]);
 
   try {
-    const configPath = process.env.AWS_CONFIG_FILE ?? join(homedir(), ".aws", "config");
+    const configPath = process.env.AWS_CONFIG_FILE ?? path.join(homedir(), ".aws", "config");
     const content = await readFile(configPath, "utf-8");
 
     // Find the [profile <name>] section
