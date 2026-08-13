@@ -123,20 +123,18 @@ export class StreamingUpdater {
     this._scheduleFlush(state);
   }
 
-  async finalize(state: StreamingState): Promise<void> {
+  async finalize(state: StreamingState, beforeAnswer?: () => Promise<void>): Promise<void> {
     this._cancelTimer(state);
     this._cancelCoalesceTimer(state);
 
     if (state.toolRecords.length > 0) {
-      // The original message predates the tool attachment. Turn it into a
-      // small activity marker, upload the expandable details, then post the
-      // answer as a new reply so the answer is always last.
+      // Freeze the streaming placeholder before publishing artifacts. The final
+      // answer is posted only after all attachments, so Slack cannot reorder it.
       const answer = state.rawMarkdown;
       state.rawMarkdown = "🔧 Tool activity (see details below)";
       await this._doFlush(state, false);
+      if (beforeAnswer) await beforeAnswer();
       await this._uploadToolLog(state);
-      // Let Slack finish processing the upload before creating the final reply
-      // so the attachment cannot appear after it in the thread.
       await new Promise<void>((resolve) => setImmediate(resolve));
       await this._postStandalone(state, answer);
     } else {
