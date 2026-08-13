@@ -368,8 +368,7 @@ export class ThreadSession {
               // API failed before producing any content — show the error
               await this._updater.error(state, new Error(apiError));
             } else {
-              await this._updater.finalize(state);
-              // Auto-post diff if files were modified
+              // Keep every turn artifact before the final AI response: tool log, then diff review, then answer.
               if (hasFileModifications(toolRecords)) {
                 try {
                   await postDiffReview(this._client, this.channelId, this.threadTs, this.cwd, {
@@ -381,6 +380,7 @@ export class ThreadSession {
                   log.error("Failed to post diff review", { threadTs: this.threadTs, error: err });
                 }
               }
+              await this._updater.finalize(state);
               // Check context usage and warn if approaching limits
               this._checkContextWarning();
             }
