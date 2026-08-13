@@ -218,12 +218,12 @@ describe("StreamingUpdater", () => {
 
     await updater.finalize(state);
 
-    // The expandable detailed log is posted before the final answer.
+    // The live message remains the final answer; the log is appended afterward.
     assert.equal(client.files.uploadV2.mock.calls.length, 1);
     assert.equal(client.files.uploadV2.mock.calls[0][0].filename, "tool-activity.txt");
     assert.ok(client.files.uploadV2.mock.calls[0][0].content.includes("Read"));
-    const finalPost = client.chat.postMessage.mock.calls.at(-1)![0];
-    assert.equal(finalPost.text.trim(), "Done");
+    const finalUpdate = client.chat.update.mock.calls.at(-1)![0];
+    assert.equal(finalUpdate.text.trim(), "Done");
   });
 
   it("finalize does not upload snippet when no tools were used", async () => {
@@ -249,10 +249,8 @@ describe("StreamingUpdater", () => {
     flushTimers();
     await new Promise((r) => realSetTimeout(r, 10));
     await updater.finalize(state);
-    const finalMarker = client.chat.update.mock.calls.at(-1)![0];
-    assert.ok(finalMarker.text.includes("Tool activity"));
-    const finalPost = client.chat.postMessage.mock.calls.at(-1)![0];
-    assert.equal(finalPost.text.trim(), "Result text");
+    const finalMessage = client.chat.update.mock.calls.at(-1)![0];
+    assert.equal(finalMessage.text.trim(), "Result text");
     assert.equal(client.files.uploadV2.mock.calls.length, 1);
     assert.ok(client.files.uploadV2.mock.calls[0][0].content.includes("Ran"));
   });

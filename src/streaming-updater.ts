@@ -123,20 +123,16 @@ export class StreamingUpdater {
     this._scheduleFlush(state);
   }
 
-  async finalize(state: StreamingState, beforeAnswer?: () => Promise<void>): Promise<void> {
+  async finalize(state: StreamingState, afterAnswer?: () => Promise<void>): Promise<void> {
     this._cancelTimer(state);
     this._cancelCoalesceTimer(state);
 
     if (state.toolRecords.length > 0) {
-      // Freeze the streaming placeholder before publishing artifacts. The final
-      // answer is posted only after all attachments, so Slack cannot reorder it.
-      const answer = state.rawMarkdown;
-      state.rawMarkdown = "🔧 Tool activity (see details below)";
+      // Keep the live message as the final answer. Slack appends file uploads
+      // after it, which is the least surprising and most stable thread order.
       await this._doFlush(state, false);
-      if (beforeAnswer) await beforeAnswer();
+      if (afterAnswer) await afterAnswer();
       await this._uploadToolLog(state);
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      await this._postStandalone(state, answer);
     } else {
       // With no tool log there is no later Slack message, so an in-place final
       // update is sufficient and avoids an unnecessary duplicate message.
@@ -276,20 +272,6 @@ export class StreamingUpdater {
     }
   }
 
-  private async _postStandalone(state: StreamingState, markdown: string, limit = this._msgLimit): Promise<void> {
-    const mrkdwn = markdownToMrkdwn(markdown.trim(), false);
-    const chunks = splitMrkdwn(mrkdwn, limit);
-    for (const text of chunks) {
-      await retrySlackCall(
-        () => this._client.chat.postMessage({
-          channel: state.channelId,
-          thread_ts: state.threadTs,
-          text,
-        }),
-        "chat.postMessage (final answer)",
-      );
-    }
-  }
 
   private async _flush(state: StreamingState, partial: boolean): Promise<void> {
     const body = state.rawMarkdown.trim();
